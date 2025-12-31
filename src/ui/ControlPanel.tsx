@@ -38,7 +38,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         alignItems: 'center',
         flexWrap: 'wrap'
       }}>
-        <h3 style={{ margin: 0, color: '#495057' }}>PicoRuby Simulator</h3>
+        <h3 style={{ margin: 0, color: '#495057' }}>Try PicoRuby</h3>
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button

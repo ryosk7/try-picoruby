@@ -1,5 +1,5 @@
 {
-  "name": "picoruby-wokwi",
+  "name": "try-picoruby",
   "version": "1.0.0",
   "description": "Browser-based PicoRuby simulator with Wokwi-like UI",
   "type": "module",

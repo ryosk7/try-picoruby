@@ -1,4 +1,4 @@
-# PicoRuby Simulator
+# Try PicoRuby
 
 A browser-based simulator for PicoRuby with Wokwi-like UI, built on top of rp2040js.
 
@@ -33,7 +33,7 @@ A browser-based simulator for PicoRuby with Wokwi-like UI, built on top of rp204
 ## Project Structure
 
 ```
-picoruby-wokwi/
+try-picoruby/
 ├── src/
 │   ├── simulator/
 │   │   ├── picoruby-simulator.ts  # Main simulator class

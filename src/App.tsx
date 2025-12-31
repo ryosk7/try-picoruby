@@ -179,7 +179,7 @@ export const App: React.FC = () => {
         color: '#6c757d',
         textAlign: 'center'
       }}>
-        PicoRuby Simulator v1.0 |
+        Try PicoRuby v1.0 |
         Status: {firmwareLoaded ? '✅ Firmware Loaded' : '⚠️ Load firmware to start'} |
         {isRunning ? '🟢 Running' : '🔴 Stopped'}
       </div>
