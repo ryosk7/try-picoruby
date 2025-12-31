@@ -1,0 +1,27 @@
+{
+  "name": "picoruby-wokwi",
+  "version": "1.0.0",
+  "description": "Browser-based PicoRuby simulator with Wokwi-like UI",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "build:firmware": "cd firmware && ./build-r2p2.sh"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.7.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "rp2040js": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react": "^4.1.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0"
+  }
+}
