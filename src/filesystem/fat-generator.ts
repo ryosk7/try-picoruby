@@ -141,10 +141,10 @@ export class FatGenerator {
 }
 
 /**
- * Create a minimal FAT filesystem for PicoRuby with app.mrb
+ * Create a minimal FAT filesystem for PicoRuby with /home/app.rb
  */
 export async function createR2P2Filesystem(
-  appMrb: Uint8Array,
+  appRuby: Uint8Array,
   availableSize: number
 ): Promise<Uint8Array> {
 
@@ -160,19 +160,31 @@ export async function createR2P2Filesystem(
 
   const files: FileEntry[] = [
     {
-      name: 'app.mrb',
-      content: appMrb
+      name: 'app.rb',
+      content: appRuby,
+      directory: 'home'
     }
   ];
 
   console.log(`Creating R2P2 filesystem: ${Math.round(fsSize / 1024)}KB`);
-  console.log(`App bytecode: ${appMrb.length} bytes`);
+  console.log(`App Ruby source: ${appRuby.length} bytes`);
 
   const fsImage = await fatGen.generate(files);
 
   console.log(`Generated filesystem image: ${fsImage.length} bytes`);
 
   return fsImage;
+}
+
+/**
+ * Create R2P2 filesystem with Ruby source code (backward compatibility)
+ */
+export async function createR2P2FilesystemWithSource(
+  rubyCode: string,
+  availableSize: number
+): Promise<Uint8Array> {
+  const appRuby = new TextEncoder().encode(rubyCode);
+  return createR2P2Filesystem(appRuby, availableSize);
 }
 
 /**

@@ -3,7 +3,7 @@ import { CodeEditor } from './ui/CodeEditor';
 import { Console } from './ui/Console';
 import { ControlPanel } from './ui/ControlPanel';
 import { PicoRubySimulator } from './simulator/picoruby-simulator';
-import { PicoRubyCompiler } from './compiler/picoruby-compiler';
+import { PicoRubyExecutor, ExecutionMode } from './compiler/picoruby-compiler';
 
 const DEFAULT_RUBY_CODE = `# PicoRuby Hello World
 puts "Hello, PicoRuby!"
@@ -28,9 +28,10 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [firmwareLoaded, setFirmwareLoaded] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.IMMEDIATE);
 
   const simulatorRef = useRef<PicoRubySimulator | null>(null);
-  const compilerRef = useRef<PicoRubyCompiler | null>(null);
+  const executorRef = useRef<PicoRubyExecutor | null>(null);
 
   // Initialize simulator
   const initializeSimulator = useCallback(() => {
@@ -50,78 +51,92 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  // Initialize compiler
-  const initializeCompiler = useCallback(() => {
-    if (!compilerRef.current) {
-      compilerRef.current = new PicoRubyCompiler({
+  // Initialize executor
+  const initializeExecutor = useCallback(() => {
+    if (!executorRef.current) {
+      executorRef.current = new PicoRubyExecutor({
         onOutput: (message: string) => {
-          setConsoleOutput(prev => prev + `[COMPILER] ${message}\n`);
+          setConsoleOutput(prev => prev + `[EXECUTOR] ${message}\n`);
         },
         onError: (error: string) => {
-          setConsoleOutput(prev => prev + `[COMPILER ERROR] ${error}\n`);
-        }
+          setConsoleOutput(prev => prev + `[EXECUTOR ERROR] ${error}\n`);
+        },
+        mode: executionMode
       });
+    } else {
+      // Update mode if executor already exists
+      executorRef.current.setMode(executionMode);
     }
-  }, []);
+  }, [executionMode]);
 
-  // Initialize simulator and compiler on mount
+  // Initialize simulator and executor on mount
   React.useEffect(() => {
     initializeSimulator();
-    initializeCompiler();
-  }, [initializeSimulator, initializeCompiler]);
+    initializeExecutor();
+  }, [initializeSimulator, initializeExecutor]);
 
   const handleRun = async () => {
-    if (!simulatorRef.current || !firmwareLoaded) {
-      setConsoleOutput(prev => prev + '\nERROR: Please load R2P2 firmware first\n');
+    // Only check firmware requirement for R2P2 compatible mode
+    if (executionMode === ExecutionMode.R2P2_COMPATIBLE && (!simulatorRef.current || !firmwareLoaded)) {
+      setConsoleOutput(prev => prev + '\nERROR: Please load R2P2 firmware for R2P2 compatible mode\n');
       return;
     }
 
-    if (!compilerRef.current) {
-      setConsoleOutput(prev => prev + '\nERROR: Compiler not initialized\n');
+    if (!executorRef.current) {
+      setConsoleOutput(prev => prev + '\nERROR: Executor not initialized\n');
       return;
     }
 
     try {
       setIsRunning(true);
       setIsCompiling(true);
-      setConsoleOutput(prev => prev + '\n=== Starting PicoRuby execution ===\n');
+      setConsoleOutput(prev => prev + `\n=== Starting PicoRuby execution (${executionMode} mode) ===\n`);
 
-      // Initialize compiler if needed
-      if (!compilerRef.current.isReady()) {
-        setConsoleOutput(prev => prev + 'Initializing PicoRuby compiler...\n');
-        await compilerRef.current.init();
+      // Initialize executor if needed
+      if (!executorRef.current.isReady()) {
+        setConsoleOutput(prev => prev + 'Initializing PicoRuby executor...\n');
+        await executorRef.current.init();
       }
 
-      // Compile Ruby code to .mrb bytecode
-      setConsoleOutput(prev => prev + 'Compiling Ruby code...\n');
-      const compileResult = await compilerRef.current.compileToMrb(code, 'app.rb');
+      // Execute Ruby code
+      setConsoleOutput(prev => prev + `Executing Ruby code in ${executionMode} mode...\n`);
+      const executionResult = await executorRef.current.executeRuby(code, 'app.rb');
 
-      if (!compileResult.success) {
-        throw new Error(`Compilation failed: ${compileResult.error}`);
+      if (!executionResult.success) {
+        throw new Error(`Execution failed: ${executionResult.error}`);
       }
-
-      if (!compileResult.bytecode) {
-        throw new Error('No bytecode generated');
-      }
-
-      // Flash filesystem with compiled bytecode
-      setConsoleOutput(prev => prev + `Flashing ${compileResult.bytecode.length} bytes of bytecode to filesystem...\n`);
-      await simulatorRef.current.flashFilesystem(compileResult.bytecode);
 
       // Show warnings if any
-      if (compileResult.warnings && compileResult.warnings.length > 0) {
-        compileResult.warnings.forEach(warning => {
+      if (executionResult.warnings && executionResult.warnings.length > 0) {
+        executionResult.warnings.forEach(warning => {
           setConsoleOutput(prev => prev + `[WARNING] ${warning}\n`);
         });
       }
 
-      // Reset and start the MCU
-      setConsoleOutput(prev => prev + 'Starting execution...\n');
-      simulatorRef.current.reset();
-      simulatorRef.current.start();
+      if (executionMode === ExecutionMode.IMMEDIATE) {
+        // Direct WASM execution - show output immediately
+        setConsoleOutput(prev => prev + '=== Immediate Execution Output ===\n');
+        if (executionResult.output) {
+          setConsoleOutput(prev => prev + executionResult.output);
+        }
+        setConsoleOutput(prev => prev + '\n=== Execution Complete ===\n');
+      } else {
+        // R2P2 compatible mode - flash filesystem if simulator and firmware available
+        if (simulatorRef.current && firmwareLoaded && executionResult.bytecode) {
+          const bytecode = executionResult.bytecode;
+          setConsoleOutput(prev => prev + `Flashing ${bytecode.length} bytes to R2P2 filesystem...\n`);
+          await simulatorRef.current.flashFilesystem(bytecode);
 
-      setConsoleOutput(prev => prev + 'Ruby code execution started!\n');
-      setConsoleOutput(prev => prev + 'Note: This is a mock implementation. Real execution requires actual R2P2 firmware integration.\n');
+          // Reset and start the MCU for R2P2 simulation
+          setConsoleOutput(prev => prev + 'Starting R2P2 simulation...\n');
+          simulatorRef.current.reset();
+          simulatorRef.current.start();
+
+          setConsoleOutput(prev => prev + 'R2P2 simulation started!\n');
+        } else {
+          setConsoleOutput(prev => prev + 'R2P2 compatible files generated. Load firmware to simulate.\n');
+        }
+      }
       setIsCompiling(false);
 
     } catch (error) {
@@ -232,6 +247,8 @@ export const App: React.FC = () => {
         onLoadLatestFirmware={handleLoadLatestFirmware}
         isRunning={isRunning}
         isLoading={isLoading || isCompiling}
+        executionMode={executionMode}
+        onExecutionModeChange={setExecutionMode}
       />
 
       <div style={{
@@ -269,7 +286,8 @@ export const App: React.FC = () => {
         textAlign: 'center'
       }}>
         Try PicoRuby v1.0 |
-        Status: {firmwareLoaded ? '✅ Firmware Loaded' : '⚠️ Load firmware to start'} |
+        Mode: {executionMode === ExecutionMode.IMMEDIATE ? '⚡ Immediate' : '🤖 R2P2 Compatible'} |
+        Status: {firmwareLoaded ? '✅ Firmware Loaded' : '⚠️ Load firmware for R2P2'} |
         {isRunning ? '🟢 Running' : '🔴 Stopped'}
       </div>
     </div>
