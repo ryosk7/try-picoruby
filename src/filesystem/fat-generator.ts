@@ -2,8 +2,7 @@
  * FAT filesystem generator for PicoRuby R2P2 firmware
  */
 
-// Note: fatfs-wasm API needs investigation - using placeholder for now
-// import { FatFS } from 'fatfs-wasm';
+import { FatFsDisk, FatFsFormat, FatFsMode } from 'fatfs-wasm';
 
 export interface FileEntry {
   name: string;
@@ -19,7 +18,8 @@ export interface FatConfig {
 
 export class FatGenerator {
   private config: FatConfig;
-  private fatfs?: any; // Placeholder for FatFS instance
+  private disk?: FatFsDisk;
+  private diskImage?: Uint8Array;
 
   constructor(config: FatConfig) {
     this.config = config;
@@ -30,11 +30,25 @@ export class FatGenerator {
    */
   async init(): Promise<void> {
     try {
-      // Placeholder implementation - real FAT filesystem creation needed
-      console.log('Initializing placeholder FAT filesystem...');
-      this.fatfs = {
-        files: new Map<string, Uint8Array>()
-      };
+      console.log('Initializing FAT filesystem...');
+
+      // Create a disk with the specified size
+      this.diskImage = new Uint8Array(this.config.size);
+      this.disk = await FatFsDisk.create(this.diskImage, {
+        sectorSize: this.config.sectorSize
+      });
+
+      // Format the disk
+      this.disk.mkfs({
+        fmt: this.config.size > 32 * 1024 * 1024 ? FatFsFormat.FAT32 : FatFsFormat.FAT,
+        auSize: 4096 // 4KB clusters
+      });
+
+      if (this.config.label) {
+        this.disk.setLabel(this.config.label);
+      }
+
+      console.log('FAT filesystem initialized successfully');
     } catch (error) {
       throw new Error(`Failed to initialize FAT filesystem: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -44,7 +58,7 @@ export class FatGenerator {
    * Add files to the filesystem
    */
   async addFiles(files: FileEntry[]): Promise<void> {
-    if (!this.fatfs) {
+    if (!this.disk) {
       throw new Error('Filesystem not initialized');
     }
 
@@ -53,8 +67,22 @@ export class FatGenerator {
         const fullPath = file.directory ? `${file.directory}/${file.name}` : file.name;
         console.log(`Adding file: ${fullPath} (${file.content.length} bytes)`);
 
-        // Store in placeholder filesystem
-        this.fatfs.files.set(fullPath, file.content);
+        // Create directory if needed
+        if (file.directory) {
+          try {
+            this.disk.mkdir(file.directory);
+          } catch {
+            // Directory might already exist
+          }
+        }
+
+        // Write file to filesystem
+        const fatFile = this.disk.open(
+          fullPath,
+          FatFsMode.WRITE | FatFsMode.CREATE_ALWAYS
+        );
+        fatFile.write(file.content);
+        fatFile.close();
       }
     } catch (error) {
       throw new Error(`Failed to add files: ${error instanceof Error ? error.message : String(error)}`);
@@ -68,46 +96,47 @@ export class FatGenerator {
     await this.init();
     await this.addFiles(files);
 
-    if (!this.fatfs) {
+    if (!this.disk) {
       throw new Error('Filesystem not initialized');
     }
 
-    // Create a placeholder filesystem image
-    console.log('Generating placeholder filesystem image...');
-
-    // Calculate total size needed
-    let totalSize = 0;
-    for (const [, content] of this.fatfs.files.entries()) {
-      totalSize += content.length + 64; // Add some overhead for directory entries
+    // Export the filesystem as a binary image
+    console.log('Generating FAT filesystem image...');
+    if (!this.diskImage) {
+      throw new Error('Filesystem image not available');
     }
 
-    // Create a simple concatenated file structure as placeholder
-    const image = new Uint8Array(Math.max(totalSize, 4096));
-    let offset = 0;
-
-    for (const [, content] of this.fatfs.files.entries()) {
-      if (offset + content.length < image.length) {
-        image.set(content, offset);
-        offset += content.length;
-      }
-    }
-
-    return image;
+    return new Uint8Array(this.diskImage);
   }
 
   /**
    * Get filesystem stats
    */
   async getStats() {
-    if (!this.fatfs) {
+    if (!this.disk) {
       throw new Error('Filesystem not initialized');
     }
 
-    return {
-      totalSize: this.config.size,
-      usedSize: this.fatfs.files.size * 1024, // Rough estimate
-      files: this.fatfs.files.size
-    };
+    try {
+      const [freeClusters, fatFs] = this.disk.getFree('/');
+      const bytesPerCluster = fatFs.cSize * this.config.sectorSize;
+      const totalClusters = Math.floor(this.config.size / bytesPerCluster);
+      return {
+        totalSize: this.config.size,
+        freeBytes: freeClusters * bytesPerCluster,
+        usedBytes: this.config.size - (freeClusters * bytesPerCluster),
+        totalClusters,
+        freeClusters
+      };
+    } catch (error) {
+      return {
+        totalSize: this.config.size,
+        freeBytes: 0,
+        usedBytes: this.config.size,
+        totalClusters: 0,
+        freeClusters: 0
+      };
+    }
   }
 }
 
