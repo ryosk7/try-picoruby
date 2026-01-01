@@ -58,16 +58,50 @@ export class PicoRubyCompiler {
     try {
       this.config.onOutput?.(`Compiling ${filename}...`);
 
-      // Placeholder implementation - actual API needs investigation
-      // For now, create a minimal .mrb file header to test the pipeline
-      this.config.onOutput?.('Creating placeholder bytecode...');
+      // Create a mock .mrb bytecode file for testing
+      // This simulates what a real compiler would produce
+      this.config.onOutput?.('Creating mock mruby bytecode...');
 
-      // Create a minimal mruby bytecode structure for testing
-      const placeholder = new TextEncoder().encode(`# Compiled from ${filename}\n${rubyCode}`);
+      // Mock mruby bytecode header (simplified)
+      const header = new Uint8Array([
+        0x52, 0x49, 0x54, 0x45, // "RITE" magic
+        0x30, 0x30, 0x30, 0x33, // Version "0003"
+        0x00, 0x00, 0x00, 0x20, // Size (32 bytes + code)
+        0x4D, 0x52, 0x42, 0x59, // "MRBY" section
+        0x00, 0x00, 0x00, 0x10  // Section size
+      ]);
+
+      // Add Ruby code as comment in bytecode for debugging
+      const codeComment = new TextEncoder().encode(`\n# Source: ${filename}\n# ${rubyCode.replace(/\n/g, '\n# ')}\n`);
+
+      // Simple puts instruction bytecode (mock)
+      const mockInstruction = new Uint8Array([
+        0x01, // OP_STRING (simplified)
+        0x00, 0x01, // String index
+        0x02, // OP_SEND (simplified)
+        0x00, 0x02, // Method index (puts)
+        0x03  // OP_RETURN
+      ]);
+
+      // Combine header + code + comment
+      const totalSize = header.length + mockInstruction.length + codeComment.length;
+      const bytecode = new Uint8Array(totalSize);
+      let offset = 0;
+
+      bytecode.set(header, offset);
+      offset += header.length;
+      bytecode.set(mockInstruction, offset);
+      offset += mockInstruction.length;
+      bytecode.set(codeComment, offset);
+
       const result = {
-        bytecode: Array.from(placeholder),
+        bytecode: Array.from(bytecode),
         error: null,
-        warnings: ['Using placeholder compiler - real compilation not yet implemented']
+        warnings: [
+          'Using mock compiler - produces test bytecode',
+          `Generated ${bytecode.length} bytes of mock .mrb data`,
+          'Real PicoRuby compilation requires server-side mrbc or different approach'
+        ]
       };
 
       if (result.error) {

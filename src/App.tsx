@@ -105,8 +105,15 @@ export const App: React.FC = () => {
       }
 
       // Flash filesystem with compiled bytecode
-      setConsoleOutput(prev => prev + 'Flashing filesystem...\n');
+      setConsoleOutput(prev => prev + `Flashing ${compileResult.bytecode.length} bytes of bytecode to filesystem...\n`);
       await simulatorRef.current.flashFilesystem(compileResult.bytecode);
+
+      // Show warnings if any
+      if (compileResult.warnings && compileResult.warnings.length > 0) {
+        compileResult.warnings.forEach(warning => {
+          setConsoleOutput(prev => prev + `[WARNING] ${warning}\n`);
+        });
+      }
 
       // Reset and start the MCU
       setConsoleOutput(prev => prev + 'Starting execution...\n');
@@ -114,6 +121,7 @@ export const App: React.FC = () => {
       simulatorRef.current.start();
 
       setConsoleOutput(prev => prev + 'Ruby code execution started!\n');
+      setConsoleOutput(prev => prev + 'Note: This is a mock implementation. Real execution requires actual R2P2 firmware integration.\n');
       setIsCompiling(false);
 
     } catch (error) {
