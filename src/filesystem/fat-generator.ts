@@ -2,7 +2,7 @@
  * FAT filesystem generator for PicoRuby R2P2 firmware
  */
 
-import { FatFsDisk, FatFsFormat, FatFsMode } from 'fatfs-wasm';
+import { createFatFsDiskWithCustomWasm, FatFsFormat, FatFsMode } from './custom-fatfs-loader';
 
 export interface FileEntry {
   name: string;
@@ -18,7 +18,7 @@ export interface FatConfig {
 
 export class FatGenerator {
   private config: FatConfig;
-  private disk?: FatFsDisk;
+  private disk?: any; // Use any type for custom disk implementation
   private diskImage?: Uint8Array;
 
   constructor(config: FatConfig) {
@@ -34,7 +34,7 @@ export class FatGenerator {
 
       // Create a disk with the specified size
       this.diskImage = new Uint8Array(this.config.size);
-      this.disk = await FatFsDisk.create(this.diskImage, {
+      this.disk = await createFatFsDiskWithCustomWasm(this.diskImage, {
         sectorSize: this.config.sectorSize
       });
 
@@ -81,8 +81,10 @@ export class FatGenerator {
           fullPath,
           FatFsMode.WRITE | FatFsMode.CREATE_ALWAYS
         );
-        fatFile.write(file.content);
-        fatFile.close();
+        if (fatFile && fatFile.write) {
+          fatFile.write(file.content);
+          fatFile.close();
+        }
       }
     } catch (error) {
       throw new Error(`Failed to add files: ${error instanceof Error ? error.message : String(error)}`);
@@ -141,10 +143,10 @@ export class FatGenerator {
 }
 
 /**
- * Create a minimal FAT filesystem for PicoRuby with /home/app.rb
+ * Create a minimal FAT filesystem for PicoRuby with /home/app.mrb
  */
 export async function createR2P2Filesystem(
-  appRuby: Uint8Array,
+  mrbBytecode: Uint8Array,
   availableSize: number
 ): Promise<Uint8Array> {
 
@@ -160,14 +162,14 @@ export async function createR2P2Filesystem(
 
   const files: FileEntry[] = [
     {
-      name: 'app.rb',
-      content: appRuby,
+      name: 'app.mrb',
+      content: mrbBytecode,
       directory: 'home'
     }
   ];
 
   console.log(`Creating R2P2 filesystem: ${Math.round(fsSize / 1024)}KB`);
-  console.log(`App Ruby source: ${appRuby.length} bytes`);
+  console.log(`App mruby bytecode: ${mrbBytecode.length} bytes`);
 
   const fsImage = await fatGen.generate(files);
 
@@ -177,14 +179,47 @@ export async function createR2P2Filesystem(
 }
 
 /**
- * Create R2P2 filesystem with Ruby source code (backward compatibility)
+ * Create R2P2 filesystem with both Ruby source and mruby bytecode
  */
 export async function createR2P2FilesystemWithSource(
   rubyCode: string,
+  mrbBytecode: Uint8Array,
   availableSize: number
 ): Promise<Uint8Array> {
+  // Use a reasonable size for the filesystem (leave some space for future files)
+  const fsSize = Math.min(availableSize, 1024 * 1024); // Max 1MB
+  const sectorSize = 4096; // 4KB sectors as used by R2P2
+
+  const fatGen = new FatGenerator({
+    size: fsSize,
+    sectorSize: sectorSize,
+    label: 'R2P2FS'
+  });
+
   const appRuby = new TextEncoder().encode(rubyCode);
-  return createR2P2Filesystem(appRuby, availableSize);
+
+  const files: FileEntry[] = [
+    {
+      name: 'app.rb',
+      content: appRuby,
+      directory: 'home'
+    },
+    {
+      name: 'app.mrb',
+      content: mrbBytecode,
+      directory: 'home'
+    }
+  ];
+
+  console.log(`Creating R2P2 filesystem: ${Math.round(fsSize / 1024)}KB`);
+  console.log(`App Ruby source: ${appRuby.length} bytes`);
+  console.log(`App mruby bytecode: ${mrbBytecode.length} bytes`);
+
+  const fsImage = await fatGen.generate(files);
+
+  console.log(`Generated filesystem image: ${fsImage.length} bytes`);
+
+  return fsImage;
 }
 
 /**

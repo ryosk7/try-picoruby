@@ -3,7 +3,7 @@ import { CodeEditor } from './ui/CodeEditor';
 import { Console } from './ui/Console';
 import { ControlPanel } from './ui/ControlPanel';
 import { PicoRubySimulator } from './simulator/picoruby-simulator';
-import { PicoRubyExecutor, ExecutionMode } from './compiler/picoruby-compiler';
+import { PicoRubyExecutor } from './compiler/picoruby-compiler';
 
 const DEFAULT_RUBY_CODE = `# PicoRuby Hello World
 puts "Hello, PicoRuby!"
@@ -28,7 +28,6 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [firmwareLoaded, setFirmwareLoaded] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.IMMEDIATE);
 
   const simulatorRef = useRef<PicoRubySimulator | null>(null);
   const executorRef = useRef<PicoRubyExecutor | null>(null);
@@ -61,13 +60,9 @@ export const App: React.FC = () => {
         onError: (error: string) => {
           setConsoleOutput(prev => prev + `[EXECUTOR ERROR] ${error}\n`);
         },
-        mode: executionMode
       });
-    } else {
-      // Update mode if executor already exists
-      executorRef.current.setMode(executionMode);
     }
-  }, [executionMode]);
+  }, []);
 
   // Initialize simulator and executor on mount
   React.useEffect(() => {
@@ -76,9 +71,9 @@ export const App: React.FC = () => {
   }, [initializeSimulator, initializeExecutor]);
 
   const handleRun = async () => {
-    // Only check firmware requirement for R2P2 compatible mode
-    if (executionMode === ExecutionMode.R2P2_COMPATIBLE && (!simulatorRef.current || !firmwareLoaded)) {
-      setConsoleOutput(prev => prev + '\nERROR: Please load R2P2 firmware for R2P2 compatible mode\n');
+    // Check firmware requirement for R2P2 mode
+    if (!simulatorRef.current || !firmwareLoaded) {
+      setConsoleOutput(prev => prev + '\nERROR: Please load R2P2 firmware first\n');
       return;
     }
 
@@ -90,7 +85,7 @@ export const App: React.FC = () => {
     try {
       setIsRunning(true);
       setIsCompiling(true);
-      setConsoleOutput(prev => prev + `\n=== Starting PicoRuby execution (${executionMode} mode) ===\n`);
+      setConsoleOutput(prev => prev + '\n=== Starting PicoRuby execution (R2P2 Compatible) ===\n');
 
       // Initialize executor if needed
       if (!executorRef.current.isReady()) {
@@ -99,7 +94,7 @@ export const App: React.FC = () => {
       }
 
       // Execute Ruby code
-      setConsoleOutput(prev => prev + `Executing Ruby code in ${executionMode} mode...\n`);
+      setConsoleOutput(prev => prev + 'Executing Ruby code in R2P2 compatible mode...\n');
       const executionResult = await executorRef.current.executeRuby(code, 'app.rb');
 
       if (!executionResult.success) {
@@ -113,29 +108,20 @@ export const App: React.FC = () => {
         });
       }
 
-      if (executionMode === ExecutionMode.IMMEDIATE) {
-        // Direct WASM execution - show output immediately
-        setConsoleOutput(prev => prev + '=== Immediate Execution Output ===\n');
-        if (executionResult.output) {
-          setConsoleOutput(prev => prev + executionResult.output);
-        }
-        setConsoleOutput(prev => prev + '\n=== Execution Complete ===\n');
+      // R2P2 compatible mode - flash filesystem if simulator and firmware available
+      if (simulatorRef.current && firmwareLoaded && executionResult.bytecode) {
+        const bytecode = executionResult.bytecode;
+        setConsoleOutput(prev => prev + `Flashing ${bytecode.length} bytes to R2P2 filesystem...\n`);
+        await simulatorRef.current.flashFilesystem(bytecode);
+
+        // Reset and start the MCU for R2P2 simulation
+        setConsoleOutput(prev => prev + 'Starting R2P2 simulation...\n');
+        simulatorRef.current.reset();
+        simulatorRef.current.start();
+
+        setConsoleOutput(prev => prev + 'R2P2 simulation started!\n');
       } else {
-        // R2P2 compatible mode - flash filesystem if simulator and firmware available
-        if (simulatorRef.current && firmwareLoaded && executionResult.bytecode) {
-          const bytecode = executionResult.bytecode;
-          setConsoleOutput(prev => prev + `Flashing ${bytecode.length} bytes to R2P2 filesystem...\n`);
-          await simulatorRef.current.flashFilesystem(bytecode);
-
-          // Reset and start the MCU for R2P2 simulation
-          setConsoleOutput(prev => prev + 'Starting R2P2 simulation...\n');
-          simulatorRef.current.reset();
-          simulatorRef.current.start();
-
-          setConsoleOutput(prev => prev + 'R2P2 simulation started!\n');
-        } else {
-          setConsoleOutput(prev => prev + 'R2P2 compatible files generated. Load firmware to simulate.\n');
-        }
+        setConsoleOutput(prev => prev + 'R2P2 compatible files generated. Load firmware to simulate.\n');
       }
       setIsCompiling(false);
 
@@ -247,8 +233,6 @@ export const App: React.FC = () => {
         onLoadLatestFirmware={handleLoadLatestFirmware}
         isRunning={isRunning}
         isLoading={isLoading || isCompiling}
-        executionMode={executionMode}
-        onExecutionModeChange={setExecutionMode}
       />
 
       <div style={{
@@ -286,7 +270,7 @@ export const App: React.FC = () => {
         textAlign: 'center'
       }}>
         Try PicoRuby v1.0 |
-        Mode: {executionMode === ExecutionMode.IMMEDIATE ? '⚡ Immediate' : '🤖 R2P2 Compatible'} |
+        Mode: 🤖 R2P2 Compatible |
         Status: {firmwareLoaded ? '✅ Firmware Loaded' : '⚠️ Load firmware for R2P2'} |
         {isRunning ? '🟢 Running' : '🔴 Stopped'}
       </div>

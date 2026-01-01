@@ -180,10 +180,17 @@ export class PicoRubySimulator {
    */
   sendSerialData(data: string): void {
     if (this.usbCDC) {
-      // Note: API method name needs verification
-      // const bytes = new TextEncoder().encode(data);
-      // this.usbCDC.sendSerialData(bytes);
-      console.log('Serial data to send:', data);
+      try {
+        const bytes = new TextEncoder().encode(data);
+        // Send data through USB CDC interface byte by byte
+        for (const byte of bytes) {
+          this.usbCDC.sendSerialByte(byte);
+        }
+        console.log('Serial data sent:', data);
+      } catch (error) {
+        console.warn('Failed to send serial data:', error);
+        console.log('Serial data to send:', data);
+      }
     }
   }
 
@@ -212,11 +219,24 @@ export class PicoRubySimulator {
       while (this.running) {
         // Execute instructions in chunks to avoid blocking the UI
         for (let i = 0; i < 1000 && this.running; i++) {
-          // Note: RP2040 API method name needs verification
-          // this.mcu.executeInstruction();
-          // Placeholder execution step
-          if (typeof (this.mcu as any).step === 'function') {
-            (this.mcu as any).step();
+          try {
+            // Execute one CPU step (includes instruction fetch, decode, execute)
+            this.mcu.step();
+          } catch (instructionError) {
+            // Handle specific instruction errors
+            if (instructionError instanceof Error) {
+              if (instructionError.message.includes('BKPT') || instructionError.message.includes('breakpoint')) {
+                // Breakpoint hit - this is normal for debugging
+                console.log('Breakpoint hit, pausing execution');
+                this.stop();
+                break;
+              } else if (instructionError.message.includes('illegal') || instructionError.message.includes('undefined')) {
+                // Illegal instruction - major error
+                throw new Error(`Illegal instruction: ${instructionError.message}`);
+              }
+              // Log other instruction errors but continue
+              console.warn('Instruction warning:', instructionError.message);
+            }
           }
         }
 

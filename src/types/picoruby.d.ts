@@ -15,4 +15,17 @@ declare module '@picoruby/wasm-wasi' {
   export default function(): Promise<PicoRubyModule>;
 }
 
+// Direct module import for picoruby.js
+declare module '@picoruby/wasm-wasi/picoruby.js' {
+  interface PicoRubyModule {
+    ready: Promise<void>;
+    ccall: (name: string, returnType: string | null, argTypes: string[], args: any[]) => any;
+    print?: (text: string) => void;
+    printErr?: (text: string) => void;
+  }
+
+  function createModule(): Promise<PicoRubyModule>;
+  export default createModule;
+}
+
 // fatfs-wasm already has proper TypeScript definitions

@@ -4,10 +4,11 @@
   "description": "Browser-based PicoRuby simulator with Wokwi-like UI",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "npm run copy:wasm && vite",
+    "build": "npm run copy:wasm && tsc && vite build",
     "preview": "vite preview",
-    "build:firmware": "cd firmware && ./build-r2p2.sh"
+    "build:firmware": "cd firmware && ./build-r2p2.sh",
+    "copy:wasm": "mkdir -p public/wasm && cp node_modules/fatfs-wasm/assets/ff_single-*.wasm public/wasm/ff_single.wasm && cp node_modules/fatfs-wasm/assets/ff_multi-*.wasm public/wasm/ff_multi.wasm"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",

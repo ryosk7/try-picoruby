@@ -1,5 +1,4 @@
 import React from 'react';
-import { ExecutionMode } from '../compiler/picoruby-compiler';
 
 interface ControlPanelProps {
   onRun: () => void;
@@ -9,8 +8,6 @@ interface ControlPanelProps {
   onLoadLatestFirmware: () => void;
   isRunning: boolean;
   isLoading: boolean;
-  executionMode: ExecutionMode;
-  onExecutionModeChange: (mode: ExecutionMode) => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -20,9 +17,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onLoadFirmware,
   onLoadLatestFirmware,
   isRunning,
-  isLoading,
-  executionMode,
-  onExecutionModeChange
+  isLoading
 }) => {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -56,22 +51,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <label style={{ fontSize: '14px', color: '#495057', fontWeight: '500' }}>
             Mode:
           </label>
-          <select
-            value={executionMode}
-            onChange={(e) => onExecutionModeChange(e.target.value as ExecutionMode)}
-            disabled={isRunning || isLoading}
-            style={{
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: '1px solid #ced4da',
-              fontSize: '14px',
-              background: 'white',
-              cursor: isRunning || isLoading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            <option value={ExecutionMode.IMMEDIATE}>⚡ Immediate</option>
-            <option value={ExecutionMode.R2P2_COMPATIBLE}>🤖 R2P2 Compatible</option>
-          </select>
+          <span style={{
+            padding: '6px 8px',
+            borderRadius: '4px',
+            border: '1px solid #ced4da',
+            fontSize: '14px',
+            background: '#f8f9fa',
+            color: '#495057'
+          }}>
+            🤖 R2P2 Compatible
+          </span>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
