@@ -1,6 +1,7 @@
 import { RP2040 } from 'rp2040js';
 
 const FLASH_START_ADDRESS = 0x10000000;
+const RP2040_FAMILY_ID = 0xE48BFF56;
 
 export interface UF2Block {
   flashAddress: number;
@@ -39,6 +40,22 @@ export function decodeUF2Block(data: Uint8Array): UF2Block | null {
   if (payloadSize > 476) { // 512 - 32 (header) - 4 (magic3)
     console.error(`Invalid payload size: ${payloadSize}`);
     return null;
+  }
+
+  // Skip non-flash blocks
+  if ((flags & 0x01) !== 0) {
+    console.warn(`Skipping non-flash UF2 block ${blockNumber + 1}/${totalBlocks}`);
+    return null;
+  }
+
+  // Basic sanity checks
+  if (totalBlocks !== 0 && blockNumber >= totalBlocks) {
+    console.warn(`UF2 block number ${blockNumber} is out of range for total blocks ${totalBlocks}`);
+    return null;
+  }
+
+  if (familyId !== 0 && familyId !== RP2040_FAMILY_ID) {
+    console.warn(`UF2 family ID mismatch: expected 0x${RP2040_FAMILY_ID.toString(16)}, got 0x${familyId.toString(16)}`);
   }
 
   // Extract payload data

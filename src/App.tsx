@@ -3,6 +3,7 @@ import { CodeEditor } from './ui/CodeEditor';
 import { Console } from './ui/Console';
 import { ControlPanel } from './ui/ControlPanel';
 import { PicoRubySimulator } from './simulator/picoruby-simulator';
+import { PicoRubyCompiler } from './compiler/picoruby-compiler';
 
 const DEFAULT_RUBY_CODE = `# PicoRuby Hello World
 puts "Hello, PicoRuby!"
@@ -26,8 +27,10 @@ export const App: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [firmwareLoaded, setFirmwareLoaded] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
 
   const simulatorRef = useRef<PicoRubySimulator | null>(null);
+  const compilerRef = useRef<PicoRubyCompiler | null>(null);
 
   // Initialize simulator
   const initializeSimulator = useCallback(() => {
@@ -47,10 +50,25 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  // Initialize simulator on mount
+  // Initialize compiler
+  const initializeCompiler = useCallback(() => {
+    if (!compilerRef.current) {
+      compilerRef.current = new PicoRubyCompiler({
+        onOutput: (message: string) => {
+          setConsoleOutput(prev => prev + `[COMPILER] ${message}\n`);
+        },
+        onError: (error: string) => {
+          setConsoleOutput(prev => prev + `[COMPILER ERROR] ${error}\n`);
+        }
+      });
+    }
+  }, []);
+
+  // Initialize simulator and compiler on mount
   React.useEffect(() => {
     initializeSimulator();
-  }, [initializeSimulator]);
+    initializeCompiler();
+  }, [initializeSimulator, initializeCompiler]);
 
   const handleRun = async () => {
     if (!simulatorRef.current || !firmwareLoaded) {
@@ -58,20 +76,52 @@ export const App: React.FC = () => {
       return;
     }
 
+    if (!compilerRef.current) {
+      setConsoleOutput(prev => prev + '\nERROR: Compiler not initialized\n');
+      return;
+    }
+
     try {
       setIsRunning(true);
+      setIsCompiling(true);
       setConsoleOutput(prev => prev + '\n=== Starting PicoRuby execution ===\n');
 
-      // TODO: Compile Ruby code to bytecode with mrbcWASM
-      // For now, we'll just start the simulation with existing firmware
+      // Initialize compiler if needed
+      if (!compilerRef.current.isReady()) {
+        setConsoleOutput(prev => prev + 'Initializing PicoRuby compiler...\n');
+        await compilerRef.current.init();
+      }
+
+      // Compile Ruby code to .mrb bytecode
+      setConsoleOutput(prev => prev + 'Compiling Ruby code...\n');
+      const compileResult = await compilerRef.current.compileToMrb(code, 'app.rb');
+
+      if (!compileResult.success) {
+        throw new Error(`Compilation failed: ${compileResult.error}`);
+      }
+
+      if (!compileResult.bytecode) {
+        throw new Error('No bytecode generated');
+      }
+
+      // Flash filesystem with compiled bytecode
+      setConsoleOutput(prev => prev + 'Flashing filesystem...\n');
+      await simulatorRef.current.flashFilesystem(compileResult.bytecode);
+
+      // Reset and start the MCU
+      setConsoleOutput(prev => prev + 'Starting execution...\n');
+      simulatorRef.current.reset();
       simulatorRef.current.start();
 
-      setConsoleOutput(prev => prev + 'Ruby code execution started...\n');
+      setConsoleOutput(prev => prev + 'Ruby code execution started!\n');
+      setIsCompiling(false);
+
     } catch (error) {
       console.error('Failed to run code:', error);
       const errorMsg = error instanceof Error ? error.message : String(error);
       setConsoleOutput(prev => prev + `\nERROR: ${errorMsg}\n`);
       setIsRunning(false);
+      setIsCompiling(false);
     }
   };
 
@@ -121,6 +171,36 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleLoadLatestFirmware = async () => {
+    try {
+      setIsLoading(true);
+      setConsoleOutput(prev => prev + '\nDownloading latest R2P2 firmware v0.5.0...\n');
+
+      const response = await fetch('/firmware/r2p2-latest.uf2');
+      if (!response.ok) {
+        throw new Error(`Failed to download firmware: ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const uf2Data = new Uint8Array(arrayBuffer);
+
+      if (!simulatorRef.current) {
+        initializeSimulator();
+      }
+
+      await simulatorRef.current!.loadFirmware(uf2Data);
+      setFirmwareLoaded(true);
+      setConsoleOutput(prev => prev + 'Latest R2P2 firmware loaded successfully!\n');
+    } catch (error) {
+      console.error('Failed to load latest firmware:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setConsoleOutput(prev => prev + `\nERROR: Failed to load latest firmware: ${errorMsg}\n`);
+      setFirmwareLoaded(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleConsoleInput = (data: string) => {
     if (simulatorRef.current) {
       simulatorRef.current.sendSerialData(data);
@@ -141,8 +221,9 @@ export const App: React.FC = () => {
         onStop={handleStop}
         onReset={handleReset}
         onLoadFirmware={handleLoadFirmware}
+        onLoadLatestFirmware={handleLoadLatestFirmware}
         isRunning={isRunning}
-        isLoading={isLoading}
+        isLoading={isLoading || isCompiling}
       />
 
       <div style={{

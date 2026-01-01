@@ -46,6 +46,29 @@ export class RP2040SysInfo {
   }
 
   /**
+   * Handle atomic writes by applying the atomic operation to the current value
+   * before delegating to the normal write handler.
+   */
+  writeUint32Atomic(offset: number, value: number, atomicType: number): void {
+    const currentValue = this.readUint32(offset);
+
+    switch (atomicType) {
+      case 1: // XOR
+        this.writeUint32(offset, currentValue ^ value);
+        break;
+      case 2: // SET
+        this.writeUint32(offset, currentValue | value);
+        break;
+      case 3: // CLEAR
+        this.writeUint32(offset, currentValue & ~value);
+        break;
+      default: // Normal write
+        this.writeUint32(offset, value);
+        break;
+    }
+  }
+
+  /**
    * Reset the peripheral to its default state
    */
   reset(): void {

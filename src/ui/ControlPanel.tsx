@@ -5,6 +5,7 @@ interface ControlPanelProps {
   onStop: () => void;
   onReset: () => void;
   onLoadFirmware: (file: File) => void;
+  onLoadLatestFirmware: () => void;
   isRunning: boolean;
   isLoading: boolean;
 }
@@ -14,6 +15,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onStop,
   onReset,
   onLoadFirmware,
+  onLoadLatestFirmware,
   isRunning,
   isLoading
 }) => {
@@ -97,6 +99,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <label style={{ fontSize: '14px', color: '#495057' }}>
             R2P2 Firmware:
           </label>
+          <button
+            onClick={onLoadLatestFirmware}
+            disabled={isLoading}
+            style={{
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: '4px',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              fontSize: '12px',
+              fontWeight: '500',
+              marginRight: '8px'
+            }}
+          >
+            📦 Load Latest (v0.5.0)
+          </button>
           <input
             type="file"
             accept=".uf2"
