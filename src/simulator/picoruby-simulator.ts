@@ -18,6 +18,8 @@ export class PicoRubySimulator {
   private usbCDC?: USBCDC;
   private config: SimulatorConfig;
   private flashLayout?: FlashLayout;
+  private warningCount = 0;
+  private lastWarningTime = 0;
 
   constructor(config: SimulatorConfig = {}) {
     this.config = config;
@@ -74,18 +76,18 @@ export class PicoRubySimulator {
   }
 
   /**
-   * Flash filesystem with Ruby bytecode (.mrb file)
+   * Flash filesystem with Ruby source code (.rb file)
    */
-  async flashFilesystem(mrbBytecode: Uint8Array): Promise<void> {
+  async flashFilesystem(rubySource: Uint8Array): Promise<void> {
     if (!this.flashLayout) {
       throw new Error('Firmware not loaded. Load firmware first.');
     }
 
     try {
-      console.log('Creating FAT filesystem with app.mrb...');
+      console.log('Creating FAT filesystem with app.rb...');
 
-      // Create filesystem with the bytecode
-      const fsImage = await createR2P2Filesystem(mrbBytecode, this.flashLayout.availableSize);
+      // Create filesystem with the Ruby source
+      const fsImage = await createR2P2Filesystem(rubySource, this.flashLayout.availableSize);
 
       // Pad to sector alignment if needed
       const paddedImage = padFilesystemImage(fsImage, this.flashLayout.availableSize);
@@ -151,6 +153,10 @@ export class PicoRubySimulator {
     console.log('Starting PicoRuby simulation...');
     this.running = true;
 
+    // Reset warning counters
+    this.warningCount = 0;
+    this.lastWarningTime = 0;
+
     // Set PC to flash start and begin execution
     this.mcu.core.PC = 0x10000000;
     this.executeLoop();
@@ -170,6 +176,11 @@ export class PicoRubySimulator {
   reset(): void {
     console.log('Resetting MCU...');
     this.stop();
+
+    // Reset warning counters
+    this.warningCount = 0;
+    this.lastWarningTime = 0;
+
     this.mcu.reset();
     // Reapply patches after reset
     applyR2P2Patches(this.mcu);
@@ -233,9 +244,13 @@ export class PicoRubySimulator {
               } else if (instructionError.message.includes('illegal') || instructionError.message.includes('undefined')) {
                 // Illegal instruction - major error
                 throw new Error(`Illegal instruction: ${instructionError.message}`);
+              } else if (instructionError.message.includes('not implemented')) {
+                // Handle unimplemented instruction warnings
+                this.handleUnimplementedInstruction(instructionError.message);
+              } else {
+                // Log other instruction errors but continue
+                console.warn('Instruction warning:', instructionError.message);
               }
-              // Log other instruction errors but continue
-              console.warn('Instruction warning:', instructionError.message);
             }
           }
         }
@@ -250,6 +265,38 @@ export class PicoRubySimulator {
       if (this.config.onError) {
         this.config.onError(err);
       }
+    }
+  }
+
+  private handleUnimplementedInstruction(message: string): void {
+    const currentTime = Date.now();
+
+    // Reset warning count if it's been more than 1 second since last warning
+    if (currentTime - this.lastWarningTime > 1000) {
+      this.warningCount = 0;
+    }
+
+    this.lastWarningTime = currentTime;
+    this.warningCount++;
+
+    // If we get too many unimplemented instruction warnings in a short time,
+    // it's likely we're executing uninitialized flash (0xFFFF patterns)
+    if (this.warningCount > 50) {
+      console.warn('Too many unimplemented instruction warnings - likely executing uninitialized flash');
+      console.warn('Stopping execution to prevent infinite warning loop');
+      console.warn(`PC: 0x${this.mcu.core.PC.toString(16)}, Last warning: ${message}`);
+
+      // Stop the simulation and notify the user
+      this.stop();
+      if (this.config.onError) {
+        this.config.onError(new Error('Execution stopped: Too many unimplemented instruction warnings (likely executing uninitialized flash)'));
+      }
+      return;
+    }
+
+    // Only log the first few warnings and then periodically
+    if (this.warningCount <= 5 || this.warningCount % 10 === 0) {
+      console.warn(`[${this.warningCount}] ${message}`);
     }
   }
 }

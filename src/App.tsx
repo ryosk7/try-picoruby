@@ -1,9 +1,9 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { CodeEditor } from './ui/CodeEditor';
 import { Console } from './ui/Console';
 import { ControlPanel } from './ui/ControlPanel';
 import { PicoRubySimulator } from './simulator/picoruby-simulator';
-import { PicoRubyExecutor } from './compiler/picoruby-compiler';
+import { PicoRubyExecutor, ExecutionMode } from './compiler/picoruby-compiler';
 
 const DEFAULT_RUBY_CODE = `# PicoRuby Hello World
 puts "Hello, PicoRuby!"
@@ -28,6 +28,8 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [firmwareLoaded, setFirmwareLoaded] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
+  const [debugState, setDebugState] = useState<any>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.R2P2_COMPATIBLE);
 
   const simulatorRef = useRef<PicoRubySimulator | null>(null);
   const executorRef = useRef<PicoRubyExecutor | null>(null);
@@ -61,8 +63,11 @@ export const App: React.FC = () => {
           setConsoleOutput(prev => prev + `[EXECUTOR ERROR] ${error}\n`);
         },
       });
+
+      // Set the initial execution mode
+      executorRef.current.setMode(executionMode);
     }
-  }, []);
+  }, [executionMode]);
 
   // Initialize simulator and executor on mount
   React.useEffect(() => {
@@ -70,10 +75,30 @@ export const App: React.FC = () => {
     initializeExecutor();
   }, [initializeSimulator, initializeExecutor]);
 
+  // Update debug state periodically
+  useEffect(() => {
+    const updateDebugState = () => {
+      if (simulatorRef.current) {
+        const state = simulatorRef.current.getState();
+        setDebugState({
+          pc: state.pc,
+          sp: state.sp,
+          running: state.running,
+          flashLayout: state.flashLayout
+        });
+      }
+    };
+
+    updateDebugState(); // Initial update
+    const interval = setInterval(updateDebugState, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [firmwareLoaded, isRunning]);
+
   const handleRun = async () => {
-    // Check firmware requirement for R2P2 mode
-    if (!simulatorRef.current || !firmwareLoaded) {
-      setConsoleOutput(prev => prev + '\nERROR: Please load R2P2 firmware first\n');
+    // Check firmware requirement for R2P2 mode only
+    if (executionMode === ExecutionMode.R2P2_COMPATIBLE && (!simulatorRef.current || !firmwareLoaded)) {
+      setConsoleOutput(prev => prev + '\nERROR: Please load R2P2 firmware first for R2P2 compatible mode\n');
       return;
     }
 
@@ -85,7 +110,8 @@ export const App: React.FC = () => {
     try {
       setIsRunning(true);
       setIsCompiling(true);
-      setConsoleOutput(prev => prev + '\n=== Starting PicoRuby execution (R2P2 Compatible) ===\n');
+      const modeLabel = executionMode === ExecutionMode.WASM_DIRECT ? 'WASM Direct' : 'R2P2 Compatible';
+      setConsoleOutput(prev => prev + `\n=== Starting PicoRuby execution (${modeLabel}) ===\n`);
 
       // Initialize executor if needed
       if (!executorRef.current.isReady()) {
@@ -94,7 +120,8 @@ export const App: React.FC = () => {
       }
 
       // Execute Ruby code
-      setConsoleOutput(prev => prev + 'Executing Ruby code in R2P2 compatible mode...\n');
+      const modeLabel = executionMode === ExecutionMode.WASM_DIRECT ? 'WASM Direct mode' : 'R2P2 compatible mode';
+      setConsoleOutput(prev => prev + `Executing Ruby code in ${modeLabel}...\n`);
       const executionResult = await executorRef.current.executeRuby(code, 'app.rb');
 
       if (!executionResult.success) {
@@ -109,7 +136,7 @@ export const App: React.FC = () => {
       }
 
       // R2P2 compatible mode - flash filesystem if simulator and firmware available
-      if (simulatorRef.current && firmwareLoaded && executionResult.bytecode) {
+      if (executionMode === ExecutionMode.R2P2_COMPATIBLE && simulatorRef.current && firmwareLoaded && executionResult.bytecode) {
         const bytecode = executionResult.bytecode;
         setConsoleOutput(prev => prev + `Flashing ${bytecode.length} bytes to R2P2 filesystem...\n`);
         await simulatorRef.current.flashFilesystem(bytecode);
@@ -120,10 +147,14 @@ export const App: React.FC = () => {
         simulatorRef.current.start();
 
         setConsoleOutput(prev => prev + 'R2P2 simulation started!\n');
-      } else {
+      } else if (executionMode === ExecutionMode.R2P2_COMPATIBLE) {
         setConsoleOutput(prev => prev + 'R2P2 compatible files generated. Load firmware to simulate.\n');
       }
       setIsCompiling(false);
+
+      // Reset running state after successful execution
+      setIsRunning(false);
+      setConsoleOutput(prev => prev + '\n=== Execution completed successfully ===\n');
 
     } catch (error) {
       console.error('Failed to run code:', error);
@@ -131,6 +162,21 @@ export const App: React.FC = () => {
       setConsoleOutput(prev => prev + `\nERROR: ${errorMsg}\n`);
       setIsRunning(false);
       setIsCompiling(false);
+    }
+  };
+
+  const handleModeChange = (mode: ExecutionMode) => {
+    if (isRunning || isLoading) {
+      setConsoleOutput(prev => prev + '\nERROR: Cannot change mode while running\n');
+      return;
+    }
+
+    setExecutionMode(mode);
+    setConsoleOutput(prev => prev + `\nExecution mode changed to: ${mode === ExecutionMode.WASM_DIRECT ? 'WASM Direct' : 'R2P2 Compatible'}\n`);
+
+    // Reinitialize executor with new mode
+    if (executorRef.current) {
+      executorRef.current.setMode(mode);
     }
   };
 
@@ -231,8 +277,12 @@ export const App: React.FC = () => {
         onReset={handleReset}
         onLoadFirmware={handleLoadFirmware}
         onLoadLatestFirmware={handleLoadLatestFirmware}
+        onModeChange={handleModeChange}
+        executionMode={executionMode}
         isRunning={isRunning}
         isLoading={isLoading || isCompiling}
+        firmwareLoaded={firmwareLoaded}
+        debugState={debugState}
       />
 
       <div style={{
@@ -270,7 +320,7 @@ export const App: React.FC = () => {
         textAlign: 'center'
       }}>
         Try PicoRuby v1.0 |
-        Mode: 🤖 R2P2 Compatible |
+        Mode: {executionMode === ExecutionMode.WASM_DIRECT ? '⚡ WASM Direct' : '🤖 R2P2 Compatible'} |
         Status: {firmwareLoaded ? '✅ Firmware Loaded' : '⚠️ Load firmware for R2P2'} |
         {isRunning ? '🟢 Running' : '🔴 Stopped'}
       </div>

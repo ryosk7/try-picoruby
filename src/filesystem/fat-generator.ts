@@ -143,10 +143,10 @@ export class FatGenerator {
 }
 
 /**
- * Create a minimal FAT filesystem for PicoRuby with /home/app.mrb
+ * Create a minimal FAT filesystem for PicoRuby with /home/app.rb
  */
 export async function createR2P2Filesystem(
-  mrbBytecode: Uint8Array,
+  rubySource: Uint8Array,
   availableSize: number
 ): Promise<Uint8Array> {
 
@@ -159,61 +159,17 @@ export async function createR2P2Filesystem(
     sectorSize: sectorSize,
     label: 'R2P2FS'
   });
-
-  const files: FileEntry[] = [
-    {
-      name: 'app.mrb',
-      content: mrbBytecode,
-      directory: 'home'
-    }
-  ];
-
-  console.log(`Creating R2P2 filesystem: ${Math.round(fsSize / 1024)}KB`);
-  console.log(`App mruby bytecode: ${mrbBytecode.length} bytes`);
-
-  const fsImage = await fatGen.generate(files);
-
-  console.log(`Generated filesystem image: ${fsImage.length} bytes`);
-
-  return fsImage;
-}
-
-/**
- * Create R2P2 filesystem with both Ruby source and mruby bytecode
- */
-export async function createR2P2FilesystemWithSource(
-  rubyCode: string,
-  mrbBytecode: Uint8Array,
-  availableSize: number
-): Promise<Uint8Array> {
-  // Use a reasonable size for the filesystem (leave some space for future files)
-  const fsSize = Math.min(availableSize, 1024 * 1024); // Max 1MB
-  const sectorSize = 4096; // 4KB sectors as used by R2P2
-
-  const fatGen = new FatGenerator({
-    size: fsSize,
-    sectorSize: sectorSize,
-    label: 'R2P2FS'
-  });
-
-  const appRuby = new TextEncoder().encode(rubyCode);
 
   const files: FileEntry[] = [
     {
       name: 'app.rb',
-      content: appRuby,
-      directory: 'home'
-    },
-    {
-      name: 'app.mrb',
-      content: mrbBytecode,
+      content: rubySource,
       directory: 'home'
     }
   ];
 
   console.log(`Creating R2P2 filesystem: ${Math.round(fsSize / 1024)}KB`);
-  console.log(`App Ruby source: ${appRuby.length} bytes`);
-  console.log(`App mruby bytecode: ${mrbBytecode.length} bytes`);
+  console.log(`App Ruby source: ${rubySource.length} bytes`);
 
   const fsImage = await fatGen.generate(files);
 
@@ -221,6 +177,7 @@ export async function createR2P2FilesystemWithSource(
 
   return fsImage;
 }
+
 
 /**
  * Pad filesystem image to required size

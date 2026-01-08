@@ -1,13 +1,23 @@
 /**
- * PicoRuby executor for R2P2 compatible file generation
+ * PicoRuby executor with real WASM integration
  */
+
+import createModule from '@picoruby/wasm-wasi/picoruby.js';
 
 export interface ExecutionResult {
   success: boolean;
   output?: string;
-  bytecode?: Uint8Array;  // Source file for R2P2 compatibility
+  bytecode?: Uint8Array;  // Compiled bytecode or source file for R2P2 compatibility
   error?: string;
   warnings?: string[];
+}
+
+interface PicoRubyModule {
+  ccall: (name: string, returnType: string | null, argTypes: string[], args: any[], options?: any) => any;
+  picorubyRun(): void;
+  ready: Promise<void>;
+  print?: (text: string) => void;
+  printErr?: (text: string) => void;
 }
 
 export interface ExecutorConfig {
@@ -16,13 +26,16 @@ export interface ExecutorConfig {
 }
 
 export enum ExecutionMode {
-  R2P2_COMPATIBLE = 'r2p2-compatible'  // Generate files for R2P2 simulation
+  R2P2_COMPATIBLE = 'r2p2-compatible',  // Generate files for R2P2 simulation
+  WASM_DIRECT = 'wasm-direct'  // Execute directly in WASM
 }
 
 export class PicoRubyExecutor {
   private config: ExecutorConfig;
   private initialized = false;
   private mode: ExecutionMode;
+  private wasmModule: PicoRubyModule | null = null;
+  private outputBuffer: string = '';
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
@@ -30,31 +43,59 @@ export class PicoRubyExecutor {
   }
 
   /**
-   * Initialize for R2P2 compatible mode (no WASM required)
+   * Initialize PicoRuby WASM module
    */
   async init(): Promise<void> {
     try {
-      this.config.onOutput?.('Initializing R2P2 compatible executor...');
+      if (this.mode === ExecutionMode.WASM_DIRECT) {
+        this.config.onOutput?.('Initializing PicoRuby WASM module...');
 
-      // For R2P2 mode, we only need to generate source files
+        // Initialize WASM module
+        this.wasmModule = await createModule();
+
+        // Set up output handlers
+        if (this.wasmModule.print) {
+          this.wasmModule.print = (text: string) => {
+            this.outputBuffer += text + '\n';
+            this.config.onOutput?.(text);
+          };
+        }
+
+        if (this.wasmModule.printErr) {
+          this.wasmModule.printErr = (text: string) => {
+            this.outputBuffer += text + '\n';
+            this.config.onError?.(text);
+          };
+        }
+
+        // Initialize PicoRuby
+        this.wasmModule.ccall('picorb_init', 'number', [], []);
+        this.config.onOutput?.('PicoRuby WASM module initialized!');
+      } else {
+        this.config.onOutput?.('Initializing R2P2 compatible executor...');
+      }
+
       this.initialized = true;
-      this.config.onOutput?.(`R2P2 executor ready! Mode: ${this.mode}`);
+      this.config.onOutput?.(`PicoRuby executor ready! Mode: ${this.mode}`);
     } catch (error) {
-      const errorMsg = `Failed to initialize R2P2 executor: ${error instanceof Error ? error.message : String(error)}`;
+      const errorMsg = `Failed to initialize PicoRuby executor: ${error instanceof Error ? error.message : String(error)}`;
       this.config.onError?.(errorMsg);
       throw new Error(errorMsg);
     }
   }
 
   /**
-   * Execute Ruby source code (generate R2P2 compatible files)
+   * Execute Ruby source code
    */
   async executeRuby(rubyCode: string, filename = 'app.rb'): Promise<ExecutionResult> {
     try {
-      this.config.onOutput?.(`Generating R2P2 compatible files for ${filename}...`);
-
-      // R2P2 compatible mode - generate filesystem files
-      return await this.generateR2P2Compatible(rubyCode, filename);
+      if (this.mode === ExecutionMode.WASM_DIRECT && this.wasmModule) {
+        this.config.onOutput?.('Executing Ruby code in WASM...');
+        return await this.executeInWasm(rubyCode);
+      } else {
+        this.config.onOutput?.(`Generating R2P2 compatible files for ${filename}...`);
+        return await this.generateR2P2Compatible(rubyCode);
+      }
 
     } catch (error) {
       const errorMsg = `Execution failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -68,25 +109,63 @@ export class PicoRubyExecutor {
   }
 
   /**
-   * Generate R2P2 compatible filesystem with app.rb
+   * Execute Ruby code directly in WASM
    */
-  private async generateR2P2Compatible(rubyCode: string, _filename: string): Promise<ExecutionResult> {
+  private async executeInWasm(rubyCode: string): Promise<ExecutionResult> {
     try {
-      this.config.onOutput?.('Compiling Ruby source to mruby bytecode...');
+      if (!this.wasmModule) {
+        throw new Error('WASM module not initialized');
+      }
 
-      // Compile Ruby to mruby bytecode
-      const mrbBytecode = await this.compileToMruby(rubyCode);
+      this.outputBuffer = '';
+      this.config.onOutput?.('Creating Ruby task in WASM...');
 
-      this.config.onOutput?.(`Generated app.mrb (${mrbBytecode.length} bytes)`);
+      // Create and execute Ruby task
+      const taskResult = this.wasmModule.ccall('picorb_create_task', 'number', ['string'], [rubyCode]);
+
+      if (taskResult < 0) {
+        throw new Error('Failed to create Ruby task');
+      }
+
+      this.config.onOutput?.('Executing Ruby code...');
+
+      // Run the Ruby code
+      this.wasmModule.picorubyRun();
 
       return {
         success: true,
-        bytecode: mrbBytecode,
+        output: this.outputBuffer,
+        warnings: [
+          'Ruby code executed in PicoRuby WASM',
+          'Direct WASM execution completed'
+        ]
+      };
+
+    } catch (error) {
+      throw new Error(`WASM execution failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Generate R2P2 compatible filesystem with /home/app.rb
+   */
+  private async generateR2P2Compatible(rubyCode: string): Promise<ExecutionResult> {
+    try {
+      this.config.onOutput?.('Generating R2P2 compatible Ruby source file...');
+
+      // R2P2 expects .rb source file, not .mrb bytecode
+      const rubySource = new TextEncoder().encode(rubyCode);
+
+      this.config.onOutput?.(`Generated /home/app.rb (${rubySource.length} bytes)`);
+
+      return {
+        success: true,
+        bytecode: rubySource, // Using bytecode field to pass Ruby source
         output: '',
         warnings: [
-          'R2P2 compatible mode - mruby bytecode ready for filesystem',
-          `Bytecode size: ${mrbBytecode.length} bytes`,
-          'Ready for flashing to simulated R2P2 filesystem'
+          'R2P2 compatible mode - Ruby source ready for filesystem',
+          `Source file size: ${rubySource.length} bytes`,
+          'Ready for flashing to simulated R2P2 filesystem as /home/app.rb'
         ]
       };
 
@@ -95,97 +174,6 @@ export class PicoRubyExecutor {
     }
   }
 
-  /**
-   * Compile Ruby source code to mruby bytecode
-   */
-  private async compileToMruby(rubyCode: string): Promise<Uint8Array> {
-    try {
-      // Import PicoRuby WASM module for compilation only
-      const { default: createPicoRubyModule } = await import('@picoruby/wasm-wasi');
-
-      this.config.onOutput?.('Loading PicoRuby compiler...');
-      const picoRubyModule = await createPicoRubyModule();
-      await picoRubyModule.ready;
-
-      // Setup virtual filesystem for compilation
-      if (picoRubyModule.FS) {
-        // Write Ruby source to virtual filesystem
-        picoRubyModule.FS.writeFile('/tmp/app.rb', rubyCode, { encoding: 'utf8' });
-
-        this.config.onOutput?.('Compiling Ruby source...');
-
-        // Compile Ruby to mruby bytecode using mrbc
-        const result = picoRubyModule.ccall(
-          'mrbc_compile_file',
-          'number',
-          ['string', 'string'],
-          ['/tmp/app.rb', '/tmp/app.mrb']
-        );
-
-        if (result !== 0) {
-          throw new Error('Ruby compilation failed');
-        }
-
-        // Read the compiled bytecode
-        const mrbData = picoRubyModule.FS.readFile('/tmp/app.mrb');
-
-        if (!(mrbData instanceof Uint8Array)) {
-          throw new Error('Unexpected bytecode format');
-        }
-
-        // Cleanup
-        picoRubyModule.FS.unlink('/tmp/app.rb');
-        picoRubyModule.FS.unlink('/tmp/app.mrb');
-
-        return mrbData;
-      } else {
-        throw new Error('PicoRuby filesystem not available');
-      }
-
-    } catch (error) {
-      this.config.onOutput?.('Compilation failed, falling back to mock bytecode...');
-
-      // Fallback: Generate mock mruby bytecode structure
-      return this.generateMockMrubyBytecode(rubyCode);
-    }
-  }
-
-  /**
-   * Generate mock mruby bytecode for testing (when real compilation fails)
-   */
-  private generateMockMrubyBytecode(rubyCode: string): Uint8Array {
-    // Create a minimal mruby bytecode structure for R2P2
-    const encoder = new TextEncoder();
-    const sourceBytes = encoder.encode(rubyCode);
-
-    // mruby bytecode header (simplified)
-    const header = new Uint8Array([
-      0x52, 0x49, 0x54, 0x45, // "RITE" magic
-      0x30, 0x30, 0x30, 0x34, // version "0004"
-      0x00, 0x00, 0x00, 0x00, // CRC placeholder
-      0x00, 0x00, 0x00, 0x00, // size placeholder (will be set later)
-      0x4D, 0x41, 0x54, 0x5A, // "MATZ"
-      0x30, 0x30, 0x30, 0x30, // version "0000"
-    ]);
-
-    // Create bytecode with header + source (simplified structure)
-    const bytecode = new Uint8Array(header.length + sourceBytes.length + 8);
-    bytecode.set(header, 0);
-
-    // Set size in header
-    const totalSize = bytecode.length;
-    bytecode[12] = (totalSize >> 24) & 0xff;
-    bytecode[13] = (totalSize >> 16) & 0xff;
-    bytecode[14] = (totalSize >> 8) & 0xff;
-    bytecode[15] = totalSize & 0xff;
-
-    // Add source code data section
-    bytecode.set(sourceBytes, header.length);
-
-    this.config.onOutput?.(`Generated mock mruby bytecode: ${bytecode.length} bytes`);
-
-    return bytecode;
-  }
 
   /**
    * Check if the executor is ready to use
@@ -204,10 +192,9 @@ export class PicoRubyExecutor {
   /**
    * Set execution mode
    */
-  setMode(_mode: ExecutionMode): void {
-    // Only R2P2 compatible mode supported
-    this.mode = ExecutionMode.R2P2_COMPATIBLE;
-    this.config.onOutput?.(`Execution mode: ${this.mode}`);
+  setMode(mode: ExecutionMode): void {
+    this.mode = mode;
+    this.config.onOutput?.(`Execution mode set to: ${this.mode}`);
   }
 
   /**

@@ -1,4 +1,5 @@
 import React from 'react';
+import { ExecutionMode } from '../compiler/picoruby-compiler';
 
 interface ControlPanelProps {
   onRun: () => void;
@@ -6,8 +7,20 @@ interface ControlPanelProps {
   onReset: () => void;
   onLoadFirmware: (file: File) => void;
   onLoadLatestFirmware: () => void;
+  onModeChange: (mode: ExecutionMode) => void;
+  executionMode: ExecutionMode;
   isRunning: boolean;
   isLoading: boolean;
+  firmwareLoaded: boolean;
+  debugState?: {
+    pc: number;
+    sp: number;
+    running: boolean;
+    flashLayout?: {
+      availableStart: number;
+      availableSize: number;
+    };
+  };
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -16,8 +29,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onReset,
   onLoadFirmware,
   onLoadLatestFirmware,
+  onModeChange,
+  executionMode,
   isRunning,
-  isLoading
+  isLoading,
+  firmwareLoaded,
+  debugState
 }) => {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -51,32 +68,40 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <label style={{ fontSize: '14px', color: '#495057', fontWeight: '500' }}>
             Mode:
           </label>
-          <span style={{
-            padding: '6px 8px',
-            borderRadius: '4px',
-            border: '1px solid #ced4da',
-            fontSize: '14px',
-            background: '#f8f9fa',
-            color: '#495057'
-          }}>
-            🤖 R2P2 Compatible
-          </span>
+          <select
+            value={executionMode}
+            onChange={(e) => onModeChange(e.target.value as ExecutionMode)}
+            disabled={isRunning || isLoading}
+            style={{
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid #ced4da',
+              fontSize: '14px',
+              background: '#ffffff',
+              color: '#495057',
+              cursor: isRunning || isLoading ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <option value={ExecutionMode.R2P2_COMPATIBLE}>🤖 R2P2 Compatible</option>
+            <option value={ExecutionMode.WASM_DIRECT}>⚡ WASM Direct</option>
+          </select>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             onClick={onRun}
-            disabled={isRunning || isLoading}
+            disabled={isRunning || isLoading || (executionMode === ExecutionMode.R2P2_COMPATIBLE && !firmwareLoaded)}
             style={{
-              background: isRunning ? '#6c757d' : '#28a745',
+              background: isRunning ? '#6c757d' : (executionMode === ExecutionMode.R2P2_COMPATIBLE && !firmwareLoaded) ? '#6c757d' : '#28a745',
               color: 'white',
               border: 'none',
               padding: '8px 16px',
               borderRadius: '4px',
-              cursor: isRunning || isLoading ? 'not-allowed' : 'pointer',
+              cursor: (isRunning || isLoading || (executionMode === ExecutionMode.R2P2_COMPATIBLE && !firmwareLoaded)) ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: '500'
             }}
+            title={executionMode === ExecutionMode.R2P2_COMPATIBLE && !firmwareLoaded ? 'Load firmware first for R2P2 mode' : ''}
           >
             {isRunning ? 'Running...' : '▶ Run'}
           </button>
@@ -116,6 +141,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </button>
         </div>
 
+        {executionMode === ExecutionMode.R2P2_COMPATIBLE && (
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <label style={{ fontSize: '14px', color: '#495057' }}>
             R2P2 Firmware:
@@ -150,6 +176,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
           />
         </div>
+        )}
 
         {isLoading && (
           <div style={{
@@ -171,6 +198,72 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </div>
         )}
       </div>
+
+      {debugState && (
+        <div style={{
+          marginTop: '16px',
+          padding: '12px',
+          background: '#e9ecef',
+          borderRadius: '4px',
+          border: '1px solid #adb5bd'
+        }}>
+          <h4 style={{ margin: '0 0 8px 0', color: '#495057', fontSize: '14px', fontWeight: '600' }}>
+            🔧 Debug Information
+          </h4>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '12px',
+            fontSize: '13px'
+          }}>
+            <div>
+              <strong style={{ color: '#495057' }}>MCU Status:</strong>
+              <div style={{ color: debugState.running ? '#28a745' : '#6c757d', fontWeight: '500' }}>
+                {debugState.running ? '🟢 Running' : '🔴 Stopped'}
+              </div>
+            </div>
+
+            <div>
+              <strong style={{ color: '#495057' }}>Firmware:</strong>
+              <div style={{ color: firmwareLoaded ? '#28a745' : '#dc3545', fontWeight: '500' }}>
+                {firmwareLoaded ? '✅ Loaded' : '❌ Not Loaded'}
+              </div>
+            </div>
+
+            <div>
+              <strong style={{ color: '#495057' }}>Program Counter:</strong>
+              <div style={{ fontFamily: 'monospace', color: '#495057' }}>
+                0x{debugState.pc.toString(16).toUpperCase().padStart(8, '0')}
+              </div>
+            </div>
+
+            <div>
+              <strong style={{ color: '#495057' }}>Stack Pointer:</strong>
+              <div style={{ fontFamily: 'monospace', color: '#495057' }}>
+                0x{debugState.sp.toString(16).toUpperCase().padStart(8, '0')}
+              </div>
+            </div>
+
+            {debugState.flashLayout && (
+              <>
+                <div>
+                  <strong style={{ color: '#495057' }}>Flash Start:</strong>
+                  <div style={{ fontFamily: 'monospace', color: '#495057' }}>
+                    0x{debugState.flashLayout.availableStart.toString(16).toUpperCase()}
+                  </div>
+                </div>
+
+                <div>
+                  <strong style={{ color: '#495057' }}>Available Space:</strong>
+                  <div style={{ color: '#495057' }}>
+                    {Math.round(debugState.flashLayout.availableSize / 1024)}KB
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes spin {
