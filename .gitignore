@@ -1,0 +1,5 @@
+build/
+.rake_tasks~
+tags
+releases/
+lib/pico-examples/
