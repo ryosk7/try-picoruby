@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>try picoruby</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Iosevka Web", "JetBrains Mono", "Fira Code", monospace;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #f4f0e8;
+        color: #1b1b1b;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      .panel {
+        background: #fff8f0;
+        border: 1px solid #d7cbb8;
+        padding: 16px;
+        border-radius: 8px;
+        box-shadow: 2px 2px 0 #d7cbb8;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .input-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .input-row input {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid #1b1b1b;
+        background: #fffdf7;
+        font-family: inherit;
+      }
+      button {
+        padding: 6px 12px;
+        border: 1px solid #1b1b1b;
+        background: #f0e1c5;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:hover {
+        background: #e7d1a5;
+      }
+      .status {
+        font-size: 14px;
+        margin-top: 8px;
+      }
+      .output {
+        margin-top: 12px;
+        background: #1b1b1b;
+        color: #f8f3e6;
+        padding: 12px;
+        min-height: 200px;
+        white-space: pre-wrap;
+        border-radius: 6px;
+        overflow: auto;
+      }
+      .hint {
+        font-size: 12px;
+        color: #5a4f3d;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>try picoruby</h1>
+    <div class="panel">
+      <div class="controls">
+        <button data-action="start">Start</button>
+        <button data-action="stop">Stop</button>
+        <button data-action="reset">Reset</button>
+        <button data-action="load-default">Load default UF2</button>
+      </div>
+      <div class="status">Status: <span data-status>Idle</span></div>
+      <div class="input-row">
+        <input type="text" placeholder="UART0 input (press Enter)" data-input />
+        <button data-action="send">Send</button>
+      </div>
+      <div class="output" data-output tabindex="0" aria-label="Terminal output"></div>
+      <div class="hint">
+        Click the terminal to focus. Default UF2: build/picoruby/pico/debug/R2P2-PICORUBY-PICO-0.5.0-20260111-0353244.uf2 (UART0 I/O)
+      </div>
+    </div>
+    <script type="module" src="./main.js?v=6"></script>
+  </body>
+</html>
