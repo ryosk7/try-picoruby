@@ -113,7 +113,11 @@
 #endif
 
 //------------- CLASS -------------//
+#if defined(R2P2_RP2040JS)
+#define CFG_TUD_CDC              1
+#else
 #define CFG_TUD_CDC              2
+#endif
 #define CFG_TUD_MSC              1
 #define CFG_TUD_HID              0
 #define CFG_TUD_MIDI             0
@@ -140,4 +144,3 @@
 #endif
 
 #endif /* _TUSB_CONFIG_H_ */
-

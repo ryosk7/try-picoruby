@@ -17,6 +17,10 @@ set (R2P2_REVISION  ${CMAKE_REVISION})
 
 project("${R2P2_NAME}-${R2P2_VERSION}-${R2P2_BUILDDATE}-${R2P2_REVISION}")
 
+if(DEFINED ENV{R2P2_RP2040JS} AND "$ENV{R2P2_RP2040JS}" STREQUAL "1")
+  add_compile_definitions(R2P2_RP2040JS=1)
+endif()
+
 add_compile_options(-Wall
   # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int
   -Wno-format
